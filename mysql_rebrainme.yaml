@@ -1,0 +1,171 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: db
+spec:
+  finalizers:
+  - kubernetes
+status:
+  phase: Active
+
+---
+apiVersion: v1
+data:
+  database: db_speedtest
+kind: ConfigMap
+metadata:
+  name: mysql-configmap
+  namespace: db
+
+---
+apiVersion: v1
+data:
+  root_password: WVVJaWRoYjY2Nw== #YUIidhb667
+  username: dXNlcm5hbWVfbXlzcWw= #username_mysql
+  password: QnJ1Q1N0bk1UNQ== #BruCStnMT5
+kind: Secret
+metadata:
+  name: mysql-secret
+  namespace: db
+type: Opaque
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: db
+  labels:
+    app: db
+spec:
+  ports:
+    - protocol: TCP
+      port: 3306
+#      nodePort: 33006
+#      targetPort: 3306
+  selector:
+    app: db
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-headless
+  namespace: db
+  labels:
+    app: db
+spec:
+  ports:
+    - port: 3306
+      targetPort: 3306
+  selector:
+    app: db
+  clusterIP: None
+  type: ClusterIP
+
+#---
+#apiVersion: v1
+#kind: PersistentVolume
+#metadata:
+#  name: mysql-pv
+#  namespace: db
+#spec:
+#  capacity:
+#    storage: 250Mi
+#  accessModes:
+#    - ReadWriteOnce
+#  hostPath:
+#    path: /opt/mysql
+
+#---
+#apiVersion: v1
+#kind: PersistentVolumeClaim
+#metadata:
+#  name: mysql-pv-claime
+#  namespace: db
+#spec:
+#  accessModes:
+#    - ReadWriteOnce
+#  resources:
+#    requests:
+#      storage: 250Mi
+##  storageClassName: mysql-pv-claime
+#  volumeMode: Filesystem
+#status:
+#  phase: Pending
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: db
+  labels:
+    app: db
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+
+#spec:
+#  selector:
+#    matchLabels:
+#      app: db
+#      tier: mysql
+#  strategy:
+#    type: Recreate
+#  template:
+#    metadata:
+#      labels:
+#        app: db
+#        tier: mysql
+    spec:
+      containers:
+      - image: mysql:8.0
+        name: mysql
+        env:
+          - name: MYSQL_DATABASE
+            valueFrom:
+              configMapKeyRef:
+                name: mysql-configmap
+                key: database
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mysql-secret
+                key: root_password
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: mysql-secret
+                key: username
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: mysql-secret
+                key: password
+        ports:
+        - containerPort: 3306
+          name: mysql
+        resources:
+            requests:
+              memory: "512Mi"
+              cpu: "300m"
+            limits:
+              memory: "512Mi"
+              cpu: "300m"
+#        volumeMounts:
+#        - name: mysql-persistent-storage
+#          mountPath: "/var/lib/mysql"
+#      volumes:
+#      - name: mysql-persistent-storage
+#        persistentVolumeClaim:
+#          claimName: mysql-pv-claime

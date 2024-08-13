@@ -1,0 +1,449 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: final
+spec:
+  finalizers:
+  - kubernetes
+status:
+  phase: Active
+
+---
+apiVersion: v1
+data:
+  .dockerconfigjson: eyJhdXRocyI6eyJyZWdpc3RyeS5yZWJyYWlubWUuY29tIjp7InVzZXJuYW1lIjoicHVsbC1jcmVkcyIsInBhc3N3b3JkIjoiZ2xwYXQtdm5wTF9pdjdXeGR6QjJRUXVLRUUiLCJhdXRoIjoiY0hWc2JDMWpjbVZrY3pwbmJIQmhkQzEyYm5CTVgybDJOMWQ0WkhwQ01sRlJkVXRGUlE9PSJ9fX0=
+kind: Secret
+metadata:
+  name: registrysecret
+  namespace: final
+type: kubernetes.io/dockerconfigjson
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: librespeed
+  namespace: final
+  labels:
+    app.kubernetes.io/instance: librespeed
+spec:
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+  selector:
+    app.kubernetes.io/instance: librespeed
+  type: LoadBalancer
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: librespeed-ingress
+  namespace: final
+  labels:
+    app.kubernetes.io/instance: librespeed
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: 51.250.38.29.nip.io
+    http:
+      paths:
+      - pathType: Prefix
+        path: /
+        backend:
+          service:
+            name: librespeed
+            port:
+              number: 80
+
+
+#---
+#apiVersion: v1
+#kind: PersistentVolume
+#metadata:
+#  name: librespeed-pv
+#  namespace: final
+#spec:
+#  capacity:
+#    storage: 250Mi
+#  accessModes:
+#    - ReadWriteOnce
+#  hostPath:
+#    path: "/opt/librespeed"
+
+#---
+#apiVersion: v1
+#kind: PersistentVolumeClaim
+#metadata:
+#  name: librespeed-pv-claim
+#  namespace: final
+#spec:
+#  accessModes:
+#    - ReadWriteOnce
+#  resources:
+#    requests:
+#      storage: 250Mi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: librespeed
+  namespace: final
+  labels:
+    app.kubernetes.io/instance: librespeed
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: librespeed
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: librespeed
+    spec:
+      imagePullSecrets:
+        - name: registrysecret
+      containers:
+        - name: speedtest
+          image: registry.rebrainme.com/workshops/middle/kubernetes-local/newplatform_autochecks/speedtest:5.3
+#          image: wordpress:6.0.2-apache # latest: wordpress:4.9-php7.2-apache
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef:
+                name: librespeed-env
+          env:
+            - name: DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: DB_NAME
+            - name: DB_TYPE
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: DB_TYPE
+            - name: DB_HOSTNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: DB_HOSTNAME
+            - name: DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: DB_PORT
+            - name: ENABLE_ID_OBFUSCATION
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: ENABLE_ID_OBFUSCATION
+            - name: TELEMETRY
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: TELEMETRY
+            - name: REDACT_IP_ADDRESSES
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: REDACT_IP_ADDRESSES
+            - name: MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: librespeed-env
+                  key: MODE
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: librespeed-secret
+                  key: DB_USERNAME
+            - name: DB_PASSWORD
+              valueFrom:
+               secretKeyRef:
+                  name: librespeed-secret
+                  key: DB_PASSWORD
+            - name: PASSWORD
+              valueFrom:
+               secretKeyRef:
+                  name: librespeed-secret
+                  key: PASSWORD
+          ports:
+            - containerPort: 80
+              name: http
+              protocol: TCP
+          volumeMounts:
+            - name: config-volume
+              mountPath: /servers.json
+              subPath: servers.json
+      volumes:
+        - name: config-volume
+          configMap:
+            name: librespeed-servers
+
+---
+apiVersion: v1
+data:
+  ENABLE_ID_OBFUSCATION: 'true'
+  REDACT_IP_ADDRESSES: 'false'
+  TELEMETRY: 'true'
+  MODE: frontend
+  DB_TYPE: mysql
+  DB_NAME: db_speedtest
+  DB_HOSTNAME: mysql-headless.db
+  DB_PORT: "3306"
+kind: ConfigMap
+metadata:
+  name: librespeed-env
+  namespace: final
+
+---
+apiVersion: v1
+data:
+  DB_USERNAME: dXNlcm5hbWVfbXlzcWw= #username_mysql
+  DB_PASSWORD: QnJ1Q1N0bk1UNQ== #BruCStnMT5
+  PASSWORD: QnJ1Q1N0bk1UNQ== #BruCStnMT5
+kind: Secret
+metadata:
+  name: librespeed-secret
+  namespace: final
+type: Opaque
+
+---
+apiVersion: v1
+data:
+  servers.json: |
+    [
+      {
+        "name": "Helsinki, Finland (1) (Hetzner)",
+        "server": "//fi1.backend.librespeed.org/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Helsinki, Finland (2) (Hetzner)",
+        "server": "https://fi2.backend.librespeed.org:8443/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name":"Helsinki, Finland (3) (Hetzner)",
+        "server":"//fi.openspeed.org",
+        "dlURL":"garbage.php",
+        "ulURL":"empty.php",
+        "pingURL":"empty.php",
+        "getIpURL":"getIP.php"
+      },
+      {
+        "name": "Helsinki, Finland (4) (Hetzner)",
+        "server": "https://ls.fexiven.de:8443/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Helsinki, Finland (5) (Hetzner)",
+        "server": "//fast.kabi.tk/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Paris, France (Hurricane Electric)",
+        "server": "//librespeed.louifox.house/",
+        "dlURL": "backend/garbage.php",
+        "ulURL": "backend/empty.php",
+        "pingURL": "backend/empty.php",
+        "getIpURL": "backend/getIP.php"
+      },
+      {
+        "name": "Paris, France (online.net)",
+        "server": "//fr1.backend.librespeed.org/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Falkenstein, Germany (Hetzner)",
+        "server": "//de4.backend.librespeed.org/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Nuremberg, Germany (1) (Hetzner)",
+        "server": "//de1.backend.librespeed.org/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Nuremberg, Germany (2) (netcup)",
+        "server": "//de2.backend.librespeed.org/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Nuremberg, Germany (3) (Hetzner)",
+        "server": "//de3.backend.librespeed.org/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Nuremberg, Germany (4) (Hetzner)",
+        "server": "//de5.backend.librespeed.org/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Nuremberg, Germany (5) (Hetzner)",
+        "server": "https://speedtest.ciapa.tech/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name":"Bari, Italy (GARR)",
+        "server":"//st-be-ba1.infra.garr.it",
+        "dlURL":"garbage.php",
+        "ulURL":"empty.php",
+        "pingURL":"empty.php",
+        "getIpURL":"getIP.php"
+      },
+      {
+        "name":"Bologna, Italy (GARR)",
+        "server":"//st-be-bo1.infra.garr.it",
+        "dlURL":"garbage.php",
+        "ulURL":"empty.php",
+        "pingURL":"empty.php",
+        "getIpURL":"getIP.php"
+      },
+      {
+        "name":"Roma, Italy (GARR)",
+        "server":"//st-be-rm2.infra.garr.it",
+        "dlURL":"garbage.php",
+        "ulURL":"empty.php",
+        "pingURL":"empty.php",
+        "getIpURL":"getIP.php"
+      },
+      {
+        "name": "Vilnius, Lithuania (Time4VPS)",
+        "server": "//librespeed.fossdaily.xyz/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Las Vegas, United States (BuyVM)",
+        "server": "https://lv1.backend.librespeed.nixnet.services/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "New York, United States (BuyVM)",
+        "server": "https://ny1.backend.librespeed.nixnet.services/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Roost, Luxembourg (BuyVM)",
+        "server": "https://lux1.backend.librespeed.nixnet.services/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Borås, Sweden (Linux.Pizza)",
+        "server": "//se1.speedtest.linux.pizza/",
+        "dlURL": "garbage.php",
+        "ulURL": "empty.php",
+        "pingURL": "empty.php",
+        "getIpURL": "getIP.php"
+      },
+      {
+        "name": "Amsterdam, Netherlands",
+        "server": "http://spd-nlsrv.hostkey.com/",
+        "id": 1,
+        "dlURL": "garbage",
+        "ulURL": "empty",
+        "pingURL": "empty",
+        "getIpURL": "getIP"
+      },
+      {
+        "name": "Helsinki, Finland",
+        "server": "http://spd-fisrv.hostkey.com/",
+        "id": 2,
+        "dlURL": "garbage",
+        "ulURL": "empty",
+        "pingURL": "empty",
+        "getIpURL": "getIP"
+      },
+      {
+        "name": "NewYork, USA",
+        "server": "http://spd-uswb.hostkey.com/",
+        "id": 3,
+        "dlURL": "garbage",
+        "ulURL": "empty",
+        "pingURL": "empty",
+        "getIpURL": "getIP"
+      },
+      {
+        "name": "Frankfurt, Germany",
+        "server": "http://spd-desrv.hostkey.com/",
+        "id": 4,
+        "dlURL": "garbage",
+        "ulURL": "empty",
+        "pingURL": "empty",
+        "getIpURL": "getIP"
+      },
+      {
+        "name": "Reykjavik, Iceland",
+        "server": "http://spd-icsrv.hostkey.com/",
+        "id": 5,
+        "dlURL": "garbage",
+        "ulURL": "empty",
+        "pingURL": "empty",
+        "getIpURL": "getIP"
+      },
+      {
+        "name": "Türkiy, Istanbul",
+        "server": "http://spd-tr.hostkey.com/",
+        "id": 6,
+        "dlURL": "garbage",
+        "ulURL": "empty",
+        "pingURL": "empty",
+        "getIpURL": "getIP"
+      }
+    ]
+kind: ConfigMap
+metadata:
+  name: librespeed-servers
+  namespace: final
